@@ -1,0 +1,235 @@
+version: '1.0'
+kind: pipeline
+metadata:
+  name: argo-helm-guestbook/helm-guestbook-ci
+  project: argo-helm-guestbook
+  projectId: 618eaeb794abf9a4e4baf39b
+  revision: 38
+  accountId: 5a3a2a445518610001637c87
+  created_at: '2021-11-12T19:16:45.887Z'
+  updated_at: '2021-11-13T04:21:25.570Z'
+  shortName: helm-guestbook-ci
+  deprecate: {}
+  labels:
+    tags: []
+  id: 618ebd9d9c76742bb6ee5e3c
+spec:
+  triggers:
+    - name: helm-guestbook-a-commit
+      type: git
+      repo: dustinvanbuskirk/helm-guestbook-a
+      events:
+        - push.heads
+      pullRequestAllowForkEvents: false
+      commentRegex: /.*/gi
+      branchRegex: /^(?!.*main).*$/gi
+      branchRegexInput: regex
+      provider: github
+      disabled: false
+      options:
+        noCache: false
+        noCfCache: false
+        resetVolume: false
+      verified: true
+      context: github-dustin
+      contexts: []
+      variables: []
+      lastExecutionDate: '2021-11-13T04:03:27.599Z'
+      status: verified
+      id: 618ebdef94abf91488baf3ae
+      endpoint: 'https://g.codefresh.io/api/providers/github/hook/H1LhZQwTYZ'
+      secret: ##############
+    - name: helm-guestbook-a-merge
+      type: git
+      repo: dustinvanbuskirk/helm-guestbook-a
+      events:
+        - pullrequest.merged
+      pullRequestAllowForkEvents: false
+      commentRegex: /.*/gi
+      branchRegex: /.*/gi
+      branchRegexInput: regex
+      pullRequestTargetBranchRegex: /main/gi
+      provider: github
+      disabled: false
+      options:
+        noCache: false
+        noCfCache: false
+        resetVolume: false
+      verified: true
+      context: github-dustin
+      contexts: []
+      variables: []
+      status: verified
+      lastExecutionDate: '2021-11-13T04:35:37.738Z'
+      id: 618ec686bcc778636258a912
+      endpoint: 'https://g.codefresh.io/api/providers/github/hook/H1LhZQwTYZ'
+      secret: ##############
+    - name: helm-guestbook-b-commit
+      type: git
+      repo: dustinvanbuskirk/helm-guestbook-b
+      events:
+        - push.heads
+      pullRequestAllowForkEvents: false
+      commentRegex: /.*/gi
+      branchRegex: /^(?!.*main).*$/gi
+      branchRegexInput: regex
+      provider: github
+      disabled: false
+      options:
+        noCache: false
+        noCfCache: false
+        resetVolume: false
+      verified: true
+      context: github-dustin
+      contexts: []
+      variables: []
+      lastExecutionDate: '2021-11-13T04:04:06.909Z'
+      status: verified
+      id: 618ee0af94abf90b2dbaf3ce
+      endpoint: 'https://g.codefresh.io/api/providers/github/hook/kir9XwywpO'
+      secret: ##############
+    - name: helm-guestbook-b-merge
+      type: git
+      repo: dustinvanbuskirk/helm-guestbook-b
+      events:
+        - pullrequest.merged
+      pullRequestAllowForkEvents: false
+      commentRegex: /.*/gi
+      branchRegex: /.*/gi
+      branchRegexInput: regex
+      pullRequestTargetBranchRegex: /main/gi
+      provider: github
+      disabled: false
+      options:
+        noCache: false
+        noCfCache: false
+        resetVolume: false
+      verified: true
+      context: github-dustin
+      contexts: []
+      variables: []
+      status: verified
+      id: 618ee0e720bb9aff9e130494
+      endpoint: 'https://g.codefresh.io/api/providers/github/hook/kir9XwywpO'
+      secret: ##############
+  stages:
+    - clone
+    - build
+    - test
+    - push
+    - enrich
+    - gitops
+  variables: []
+  contexts: []
+  terminationPolicy: []
+  externalResources: []
+  steps:
+    Clone:
+      title: Cloning GIT Repository
+      type: git-clone
+      arguments:
+        repo: '${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}'
+        git: github
+        revision: '${{CF_REVISION}}'
+      stage: clone
+    BuildDockerImage:
+      title: Building Docker Image
+      type: build
+      working_directory: '${{Clone}}'
+      arguments:
+        image_name: '${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}'
+        tag: '${{CF_BRANCH_TAG_NORMALIZED}}-${{CF_SHORT_REVISION}}'
+      stage: build
+      when:
+        condition:
+          all:
+            validatePRStatus: '''${{CF_PULL_REQUEST_MERGED}}'' != ''true'''
+    TestDockerImage:
+      title: Testing Docker Image
+      image: '${{BuildDockerImage}}'
+      commands:
+        - exit 0
+      stage: test
+      when:
+        condition:
+          all:
+            validatePRStatus: '''${{CF_PULL_REQUEST_MERGED}}'' != ''true'''
+    PushDockerImage:
+      type: push
+      arguments:
+        candidate: '${{BuildDockerImage}}'
+        tag: '${{CF_BRANCH_TAG_NORMALIZED}}-${{CF_SHORT_REVISION}}'
+        image_name: '${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}'
+        registry: dustinvanbuskirk
+      stage: push
+      when:
+        condition:
+          all:
+            validatePRStatus: '''${{CF_PULL_REQUEST_MERGED}}'' != ''true'''
+    ExtractJIRAIssue:
+      title: Extract issue and add to image
+      type: jira-issue-extractor
+      arguments:
+        IMAGE: >-
+          ${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}:${{CF_BRANCH_TAG_NORMALIZED}}-${{CF_SHORT_REVISION}}
+        JIRA_PROJECT_PREFIX: SA
+        JIRA_HOST: codefresh-io.atlassian.net
+        MESSAGE: '${{CF_BRANCH_VERSION_NORMALIZED}}'
+        JIRA_CONTEXT: jira-p
+      stage: enrich
+    ExtractPullRequest:
+      title: Extract pull request and add to image
+      type: image-enricher
+      arguments:
+        IMAGE: >-
+          ${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}:${{CF_BRANCH_TAG_NORMALIZED}}-${{CF_SHORT_REVISION}}
+        BRANCH: '${{CF_BRANCH}}'
+        REPO: '${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}'
+        GIT_PROVIDER_NAME: github-dustin
+      stage: enrich
+      when:
+        condition:
+          all:
+            validatePRStatus: '''${{CF_PULL_REQUEST_MERGED}}'' == ''true'''
+    CloneEnvironmentsRepository:
+      title: Cloning GIT Repository
+      type: git-clone
+      arguments:
+        repo: dustinvanbuskirk/helm-guestbook-environments
+        git: github-dustin
+        revision: main
+      stage: gitops
+      when:
+        condition:
+          all:
+            validatePRStatus: '''${{CF_PULL_REQUEST_MERGED}}'' == ''true'''
+    UpdateValuesFile:
+      title: Update values.yaml
+      image: 'mikefarah/yq:3'
+      working_directory: '${{CloneEnvironmentsRepository}}'
+      commands:
+        - >-
+          yq w -i ${{CF_REPO_NAME}}/dev/values.yaml image.tag
+          ${{CF_BRANCH_TAG_NORMALIZED}}-${{CF_SHORT_REVISION}}
+        - 'cat ${{CF_REPO_NAME}}/dev/values.yaml'
+      stage: gitops
+      when:
+        condition:
+          all:
+            validatePRStatus: '''${{CF_PULL_REQUEST_MERGED}}'' == ''true'''
+    commit_and_push:
+      title: Commit manifest
+      type: git-commit
+      arguments:
+        repo: dustinvanbuskirk/helm-guestbook-environments
+        git: github-dustin
+        working_directory: /codefresh/volume/helm-guestbook-environments
+        commit_message: Updated Values
+        git_user_name: '${{CF_COMMIT_AUTHOR}}'
+        git_user_email: '${{CF_COMMIT_AUTHOR}}@codefresh.io'
+      stage: gitops
+      when:
+        condition:
+          all:
+            validatePRStatus: '''${{CF_PULL_REQUEST_MERGED}}'' == ''true'''
+

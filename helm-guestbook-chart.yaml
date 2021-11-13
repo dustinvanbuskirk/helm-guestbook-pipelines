@@ -1,0 +1,62 @@
+version: '1.0'
+kind: pipeline
+metadata:
+  name: argo-helm-guestbook/helm-guestbook-chart
+  project: argo-helm-guestbook
+  projectId: 618eaeb794abf9a4e4baf39b
+  revision: 13
+  accountId: 5a3a2a445518610001637c87
+  created_at: '2021-11-12T18:39:04.474Z'
+  updated_at: '2021-11-13T01:30:11.808Z'
+  shortName: helm-guestbook-chart
+  deprecate: {}
+spec:
+  triggers:
+    - name: dustinvanbuskirk/helm-guestbook-chart
+      type: git
+      repo: dustinvanbuskirk/helm-guestbook
+      events:
+        - push.heads
+      pullRequestAllowForkEvents: false
+      commentRegex: /.*/gi
+      branchRegex: /main/gi
+      branchRegexInput: regex
+      provider: github
+      disabled: false
+      options:
+        noCache: false
+        noCfCache: false
+        resetVolume: false
+      verified: true
+      context: github-dustin
+      contexts: []
+      variables: []
+      status: verified
+      lastExecutionDate: '2021-11-13T03:32:46.949Z'
+      id: 618eb4ccbcc77846cc58a8f8
+      endpoint: 'https://g.codefresh.io/api/providers/github/hook/qMmkHbgOhz'
+      secret: ##############
+  stages:
+    - clone
+    - package
+  variables: []
+  contexts:
+    - CF_HELM_DEMO
+  steps:
+    Clone:
+      title: Cloning GIT Repository
+      type: git-clone
+      arguments:
+        repo: '${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}'
+        git: github
+        revision: '${{CF_REVISION}}'
+      stage: clone
+    PackageHelmChart:
+      title: Push Helm Chart to Chart Repository
+      image: 'quay.io/codefreshplugins/cfstep-helm:3.6.2'
+      working_directory: '${{Clone}}'
+      environment:
+        - CHART_REF=helm-guestbook
+        - ACTION=push
+      stage: package
+
