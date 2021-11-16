@@ -4,84 +4,118 @@ metadata:
   name: argo-helm-guestbook/helm-guestbook-cd
   project: argo-helm-guestbook
   projectId: 618eaeb794abf9a4e4baf39b
-  revision: 62
+  revision: 89
   accountId: 5a3a2a445518610001637c87
   created_at: '2021-11-12T19:19:08.843Z'
-  updated_at: '2021-11-13T06:45:42.072Z'
+  updated_at: '2021-11-16T02:40:55.155Z'
   shortName: helm-guestbook-cd
   deprecate: {}
   labels:
     tags: []
+  originalYamlString: |-
+    version: "1.0"
+    stages:
+      - clone
+      - get-app-data
+      - canary
+      - verification
+      - finalize
+      - approval
+      - finalize
+      - promote
+    steps:
+      CloneHelmChartRepository:
+        title: Cloning GIT Repository
+        type: git-clone
+        arguments:
+          repo: dustinvanbuskirk/helm-guestbook
+          git: github-dustin
+          revision: main
+        stage: clone
+      ParseApplicationData:
+        image: mikefarah/yq:4
+        working_directory: ${{CloneHelmChartRepository}}/applications/${{APPLICATION}}/${{ENVIRONMENT}}
+        commands:
+          - cf_export ARGO_APPLICATION_NAME=$(yq e '.metadata.name' application.yaml)
+        stage: get-app-data
+      StartCanary:
+        title: Sync ArgoCD App
+        type: argocd-sync
+        arguments:
+          context: sales-dev-aks
+          app_name: ${{ARGO_APPLICATION_NAME}}
+          additional_flags: '--loglevel debug --timeout 1200 --grpc-web --values ../applications/${{APPLICATION}}/${{ENVIRONMENT}}/values.yaml'
+          wait_for_suspend: true
+        stage: canary
+      VerificationTests:
+        image: alpine
+        commands:
+          - ls
+        stage: verification
+      FinalizeCanary:
+        title: Finalizing Canary
+        type: argocd-rollout
+        arguments:
+          k8s_context: sales-dev-aks
+          rollout_name: ${{APPLICATION}}-${{ENVIRONMENT}}
+          rollout_namespace: ${{ENVIRONMENT}}
+          context: sales-dev-aks
+          app_name: ${{ARGO_APPLICATION_NAME}}
+          wait_healthy: true
+          additional_flags_for_wait_cmd: --grpc-web
+        stage: finalize
+      Approval:
+        type: pending-approval
+        title: Wait for approval...
+        stage: approval
+        timeout:
+          duration: 2
+          finalState: denied
+          timeUnit: hours
+        when:
+          condition:
+            all:
+              whenEnvironmentDev: 'includes("${{ENVIRONMENT}}", "dev") == true'
+      UpdateValuesFile:
+        title: Update values.yaml
+        image: mikefarah/yq:3
+        working_directory: ${{CloneHelmChartRepository}}
+        commands:
+          - yq w -i applications/${{APPLICATION}}/prod/values.yaml image.tag ${{CF_BRANCH_TAG_NORMALIZED}}-${{CF_SHORT_REVISION}}
+          - cat applications/${{APPLICATION}}/prod/values.yaml
+        stage: promote
+        when:
+          condition:
+            all:
+              whenEnvironmentDev: 'includes("${{ENVIRONMENT}}", "dev") == true'
+      GITCommitPush:
+        title: Commit values.yaml
+        type: git-commit
+        arguments:
+          repo: dustinvanbuskirk/helm-guestbook
+          git: github-dustin
+          working_directory: /codefresh/volume/helm-guestbook
+          commit_message: Updated Values
+          git_user_name: ${{CF_COMMIT_AUTHOR}}
+          git_user_email: ${{CF_COMMIT_AUTHOR}}@codefresh.io
+        stage: promote
+        when:
+          condition:
+            all:
+              whenEnvironmentDev: 'includes("${{ENVIRONMENT}}", "dev") == true'
   id: 618ebe2cb0da95653c103da5
 spec:
   triggers:
-    - name: helm-guestbook-a-dev
-      type: git
-      repo: dustinvanbuskirk/helm-guestbook-environments
-      events:
-        - push.heads
-      pullRequestAllowForkEvents: false
-      commentRegex: /.*/gi
-      branchRegex: /main/gi
-      branchRegexInput: regex
-      modifiedFilesGlob: helm-guestbook-a/dev/values.yaml
-      provider: github
-      disabled: false
-      options:
-        noCache: false
-        noCfCache: false
-        resetVolume: false
-      verified: true
-      context: github-dustin
-      contexts: []
-      variables:
-        - key: APPLICATION
-          value: helm-guestbook-a
-        - key: ENVIRONMENT
-          value: dev
-      lastExecutionDate: '2021-11-13T06:41:28.677Z'
-      status: verified
-      id: 618f3df3742b8edd90ffea11
-      endpoint: 'https://g.codefresh.io/api/providers/github/hook/Ccg3N2leYx'
-      secret: ##############
-    - name: helm-guestbook-a-prod
-      type: git
-      repo: dustinvanbuskirk/helm-guestbook-environments
-      events:
-        - push.heads
-      pullRequestAllowForkEvents: false
-      commentRegex: /.*/gi
-      branchRegex: /main/gi
-      branchRegexInput: regex
-      modifiedFilesGlob: helm-guestbook-a/prod/values.yaml
-      provider: github
-      disabled: false
-      options:
-        noCache: false
-        noCfCache: false
-        resetVolume: false
-      verified: true
-      context: github-dustin
-      contexts: []
-      variables:
-        - key: APPLICATION
-          value: helm-guestbook-a
-        - key: ENVIRONMENT
-          value: prod
-      status: verified
-      id: 618f3e22bcc7783e7e58a954
-      endpoint: 'https://g.codefresh.io/api/providers/github/hook/Ccg3N2leYx'
-      secret: ##############
     - name: helm-guestbook-b-dev
       type: git
-      repo: dustinvanbuskirk/helm-guestbook-b
+      repo: dustinvanbuskirk/helm-guestbook
       events:
         - push.heads
       pullRequestAllowForkEvents: false
       commentRegex: /.*/gi
       branchRegex: /main/gi
       branchRegexInput: regex
-      modifiedFilesGlob: helm-guestbook-b/dev/values.yaml
+      modifiedFilesGlob: applications/helm-guestbook-b/dev/values.yaml
       provider: github
       disabled: false
       options:
@@ -93,23 +127,24 @@ spec:
       contexts: []
       variables:
         - key: APPLICATION
-          value: helm-guestbook-a
+          value: helm-guestbook-b
         - key: ENVIRONMENT
           value: dev
       status: verified
-      id: 618f3f1a9c76742c37ee5e86
-      endpoint: 'https://g.codefresh.io/api/providers/github/hook/kir9XwywpO'
-      secret: ##############
+      lastExecutionDate: '2021-11-16T01:27:23.405Z'
+      id: 6192d099bcc77867e958aaa2
+      endpoint: 'https://g.codefresh.io/api/providers/github/hook/qMmkHbgOhz'
+      secret: ####################
     - name: helm-guestbook-b-prod
       type: git
-      repo: dustinvanbuskirk/helm-guestbook-environments
+      repo: dustinvanbuskirk/helm-guestbook
       events:
         - push.heads
       pullRequestAllowForkEvents: false
       commentRegex: /.*/gi
       branchRegex: /main/gi
       branchRegexInput: regex
-      modifiedFilesGlob: helm-guestbook-b/prod/values.yaml
+      modifiedFilesGlob: applications/helm-guestbook-b/prod/values.yaml
       provider: github
       disabled: false
       options:
@@ -124,11 +159,69 @@ spec:
           value: helm-guestbook-b
         - key: ENVIRONMENT
           value: prod
-      lastExecutionDate: '2021-11-13T04:37:13.453Z'
       status: verified
-      id: 618f3f60742b8ebe18ffea12
-      endpoint: 'https://g.codefresh.io/api/providers/github/hook/Ccg3N2leYx'
-      secret: ##############
+      lastExecutionDate: '2021-11-15T23:47:28.348Z'
+      id: 6192d0deb0da954bba103f5a
+      endpoint: 'https://g.codefresh.io/api/providers/github/hook/qMmkHbgOhz'
+      secret: ####################
+    - name: helm-guestbook-a-prod
+      type: git
+      repo: dustinvanbuskirk/helm-guestbook
+      events:
+        - push.heads
+      pullRequestAllowForkEvents: false
+      commentRegex: /.*/gi
+      branchRegex: /main/gi
+      branchRegexInput: regex
+      modifiedFilesGlob: applications/helm-guestbook-a/prod/values.yaml
+      provider: github
+      disabled: false
+      options:
+        noCache: false
+        noCfCache: false
+        resetVolume: false
+      verified: true
+      context: github-dustin
+      contexts: []
+      variables:
+        - key: APPLICATION
+          value: helm-guestbook-a
+        - key: ENVIRONMENT
+          value: prod
+      status: verified
+      lastExecutionDate: '2021-11-16T02:37:23.076Z'
+      id: 6192d18bb0da957696103f5b
+      endpoint: 'https://g.codefresh.io/api/providers/github/hook/qMmkHbgOhz'
+      secret: ####################
+    - name: helm-guestbook-a-dev
+      type: git
+      repo: dustinvanbuskirk/helm-guestbook
+      events:
+        - push.heads
+      pullRequestAllowForkEvents: false
+      commentRegex: /.*/gi
+      branchRegex: /main/gi
+      branchRegexInput: regex
+      modifiedFilesGlob: applications/helm-guestbook-a/dev/values.yaml
+      provider: github
+      disabled: false
+      options:
+        noCache: false
+        noCfCache: false
+        resetVolume: false
+      verified: true
+      context: github-dustin
+      contexts: []
+      variables:
+        - key: APPLICATION
+          value: helm-guestbook-a
+        - key: ENVIRONMENT
+          value: dev
+      status: verified
+      lastExecutionDate: '2021-11-16T02:35:54.336Z'
+      id: 6192d1cc742b8e7539ffeb57
+      endpoint: 'https://g.codefresh.io/api/providers/github/hook/qMmkHbgOhz'
+      secret: ####################
   stages:
     - clone
     - get-app-data
@@ -153,38 +246,46 @@ spec:
     dindStorage: nullGi
   terminationPolicy: []
   externalResources: []
+  debug:
+    steps:
+      VerificationTests:
+        phases:
+          before: false
+          override: true
+          after: false
   steps:
-    CloneEnvironmentsRepository:
+    CloneHelmChartRepository:
       title: Cloning GIT Repository
       type: git-clone
       arguments:
-        repo: dustinvanbuskirk/helm-guestbook-environments
+        repo: dustinvanbuskirk/helm-guestbook
         git: github-dustin
         revision: main
       stage: clone
     ParseApplicationData:
       image: 'mikefarah/yq:4'
-      working_directory: '${{CloneEnvironmentsRepository}}/${{APPLICATION}}/${{ENVIRONMENT}}'
+      working_directory: >-
+        ${{CloneHelmChartRepository}}/applications/${{APPLICATION}}/${{ENVIRONMENT}}
       commands:
         - >-
           cf_export ARGO_APPLICATION_NAME=$(yq e '.metadata.name'
           application.yaml)
       stage: get-app-data
     StartCanary:
-      title: Sync Development ArgoCD App
+      title: Sync ArgoCD App
       type: argocd-sync
       arguments:
-        context: argocd-aks-sales-dev
+        context: sales-dev-aks
         app_name: '${{ARGO_APPLICATION_NAME}}'
         additional_flags: >-
           --loglevel debug --timeout 1200 --grpc-web --values
-          ./${{APPLICATION}}/${{ENVIRONMENT}}/values.yaml
+          ../applications/${{APPLICATION}}/${{ENVIRONMENT}}/values.yaml
         wait_for_suspend: true
       stage: canary
     VerificationTests:
       image: alpine
-      command:
-        - exit 0
+      commands:
+        - ls
       stage: verification
     FinalizeCanary:
       title: Finalizing Canary
@@ -193,7 +294,7 @@ spec:
         k8s_context: sales-dev-aks
         rollout_name: '${{APPLICATION}}-${{ENVIRONMENT}}'
         rollout_namespace: '${{ENVIRONMENT}}'
-        context: argocd-aks-sales-dev
+        context: sales-dev-aks
         app_name: '${{ARGO_APPLICATION_NAME}}'
         wait_healthy: true
         additional_flags_for_wait_cmd: '--grpc-web'
@@ -202,6 +303,10 @@ spec:
       type: pending-approval
       title: Wait for approval...
       stage: approval
+      timeout:
+        duration: 2
+        finalState: denied
+        timeUnit: hours
       when:
         condition:
           all:
@@ -209,12 +314,12 @@ spec:
     UpdateValuesFile:
       title: Update values.yaml
       image: 'mikefarah/yq:3'
-      working_directory: '${{CloneEnvironmentsRepository}}'
+      working_directory: '${{CloneHelmChartRepository}}'
       commands:
         - >-
-          yq w -i ${{CF_REPO_NAME}}/prod/values.yaml image.tag
+          yq w -i applications/${{APPLICATION}}/prod/values.yaml image.tag
           ${{CF_BRANCH_TAG_NORMALIZED}}-${{CF_SHORT_REVISION}}
-        - 'cat ${{CF_REPO_NAME}}/prod/values.yaml'
+        - 'cat applications/${{APPLICATION}}/prod/values.yaml'
       stage: promote
       when:
         condition:
@@ -224,9 +329,9 @@ spec:
       title: Commit values.yaml
       type: git-commit
       arguments:
-        repo: dustinvanbuskirk/helm-guestbook-environments
+        repo: dustinvanbuskirk/helm-guestbook
         git: github-dustin
-        working_directory: /codefresh/volume/helm-guestbook-environments
+        working_directory: /codefresh/volume/helm-guestbook
         commit_message: Updated Values
         git_user_name: '${{CF_COMMIT_AUTHOR}}'
         git_user_email: '${{CF_COMMIT_AUTHOR}}@codefresh.io'
