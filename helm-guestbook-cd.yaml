@@ -4,10 +4,10 @@ metadata:
   name: argo-helm-guestbook/helm-guestbook-cd
   project: argo-helm-guestbook
   projectId: 618eaeb794abf9a4e4baf39b
-  revision: 89
+  revision: 90
   accountId: 5a3a2a445518610001637c87
   created_at: '2021-11-12T19:19:08.843Z'
-  updated_at: '2021-11-16T02:40:55.155Z'
+  updated_at: '2021-11-16T02:56:18.475Z'
   shortName: helm-guestbook-cd
   deprecate: {}
   labels:
@@ -81,7 +81,7 @@ metadata:
         image: mikefarah/yq:3
         working_directory: ${{CloneHelmChartRepository}}
         commands:
-          - yq w -i applications/${{APPLICATION}}/prod/values.yaml image.tag ${{CF_BRANCH_TAG_NORMALIZED}}-${{CF_SHORT_REVISION}}
+          - yq w -i applications/${{APPLICATION}}/prod/values.yaml image.tag $(yq r applications/${{APPLICATION}}/dev/values.yaml image.tag)
           - cat applications/${{APPLICATION}}/prod/values.yaml
         stage: promote
         when:
@@ -317,8 +317,8 @@ spec:
       working_directory: '${{CloneHelmChartRepository}}'
       commands:
         - >-
-          yq w -i applications/${{APPLICATION}}/prod/values.yaml image.tag
-          ${{CF_BRANCH_TAG_NORMALIZED}}-${{CF_SHORT_REVISION}}
+          yq w -i applications/${{APPLICATION}}/prod/values.yaml image.tag $(yq
+          r applications/${{APPLICATION}}/dev/values.yaml image.tag)
         - 'cat applications/${{APPLICATION}}/prod/values.yaml'
       stage: promote
       when:
